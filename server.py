@@ -37,7 +37,7 @@ def main():
         # 接続があるまで待機
         print('Waiting for the connection ...')
         conn, addr = my_socket.accept()
-        print('Connected by .. ', addr)
+        print('➕ Connected by .. ', addr)
         data_sum = ''
         executor.submit(__handle_message, (conn, addr, data_sum))
 
