@@ -41,7 +41,6 @@ class ConnectionManager:
         self.__connect_to_P2PNW(host, port)
     
     def __connect_to_P2PNW(self, host, port):
-        print(host,port)
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((host, port))
         msg = self.mm.build(MSG_ADD, self.port)
