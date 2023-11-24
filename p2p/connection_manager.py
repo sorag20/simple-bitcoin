@@ -5,6 +5,8 @@ import codecs
 from concurrent.futures import ThreadPoolExecutor
 
 from .core_node_list import CoreNodeList
+from .edge_node_list import EdgeNodeList
+
 from .message_manager import (
     MessageManager,
     MSG_ADD,
@@ -33,6 +35,7 @@ class ConnectionManager:
         self.host = host
         self.port = my_port
         self.core_node_set = CoreNodeList()
+        self.edge_node_set = EdgeNodeList()
         self.__add_peer((host, my_port))
         self.mm = MessageManager()
 
@@ -43,6 +46,9 @@ class ConnectionManager:
 
         self.ping_timer = threading.Timer(PING_INTERVAL, self.__check_peers_connection)
         self.ping_timer.start()
+        
+        self.ping_timer_e = threading.Timer(PING_INTERVAL, self.__check_edges_connection)
+        self.ping_timer_e.start()
 
     # ユーザが指定した既知のCoreノードへの接続（ServerCore向け
     def join_network(self, host, port):
@@ -159,6 +165,14 @@ class ConnectionManager:
                 cl = pickle.dumps(self.core_node_set.get_list(), 0).decode()
                 msg = self.mm.build(MSG_CORE_LIST, self.port, cl)
                 self.send_msg((addr[0], peer_port), msg)
+            elif cmd == MSG_ADD_AS_EDGE:
+                self.__add_edge_node((addr[0], peer_port))
+                cl = pickle.dumps(self.core_node_set.get_list(), 0).decode()
+                msg = self.mm.build(MSG_CORE_LIST, self.port, cl)
+                self.send_msg((addr[0], peer_port), msg)
+            elif cmd == MSG_REMOVE_EDGE:
+                self.__remove_edge_node((addr[0], peer_port))
+                
             else:
                 print('received unknown command', cmd)
                 return
@@ -196,6 +210,25 @@ class ConnectionManager:
             peer : 削除するノードの接続先情報（IPアドレスとポート番号）
         """
         self.core_node_set.remove(peer)
+    
+    def __add_edge_node(self, edge):
+        """
+        Edge ノードをリストに追加する。クラスの外からは利用しない想定
+        """
+        self.edge_node_set.add((edge))
+    
+    def __remove_edge_node(self, edge):
+        """
+        離脱したと判断される Edge ノードをリストから削除する。クラスの外からは利用しない想定
+        """
+        self.edge_node_set.remove(edge)
+    
+    def send_msg_to_all_edge(self, msg):
+        print('send_msg_to_all_edge was called! ')
+        current_list = self.edge_node_set.get_list()
+        for edge in current_list:
+            print("message will be sent to ... " ,edge)
+            self.send_msg(edge, msg)
 
 
     def __check_peers_connection(self):
@@ -214,7 +247,7 @@ class ConnectionManager:
             self.core_node_set.overwrite(current_core_list)
 
         current_core_list = self.core_node_set.get_list()
-        print('current core node list:', current_core_list)
+        print('✔ current core node list:', current_core_list)
         # 変更があった時だけブロードキャストで通知する
         if changed:
             cl = pickle.dumps(current_core_list, 0).decode()
@@ -222,12 +255,30 @@ class ConnectionManager:
             self.send_msg_to_all_peer(msg)
         self.ping_timer = threading.Timer(PING_INTERVAL, self.__check_peers_connection)
         self.ping_timer.start()
+    
+    def __check_edges_connection(self):
+        """
+        接続されているEdgeノード全ての生存確認を行う。クラスの外からは利用しない想定
+        この確認処理は定期的に実行される
+        """
+        print('check_edges_connection was called')
+        current_edge_list = self.edge_node_set.get_list()
+        dead_e_node_set = list(filter(lambda p: not self.__is_alive(p), current_edge_list))
+        if dead_e_node_set:
+            print('Removing Edges', dead_e_node_set)
+            current_edge_list = current_edge_list - set(dead_e_node_set)
+            self.edge_node_set.overwrite(current_edge_list)
+
+        current_edge_list = self.edge_node_set.get_list()
+        print('💠current edge node list:', current_edge_list)
+        self.ping_timer_e = threading.Timer(PING_INTERVAL, self.__check_edges_connection)
+        self.ping_timer_e.start()
 
 
     def __is_alive(self, target):
         """
         有効ノード確認メッセージの送信
-
+．．
         param:
             target : 有効ノード確認メッセージの送り先となるノードの接続情報（IPアドレスとポート番号）
         """

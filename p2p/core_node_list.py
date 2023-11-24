@@ -48,3 +48,7 @@ class CoreNodeList:
 
     def get_length(self):
         return len(self.list)
+
+    #リストのトップにある Peer を返却する
+    def get_c_node_info(self):
+        return list(self.list)[0]
