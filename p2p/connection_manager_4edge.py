@@ -22,7 +22,7 @@ PING_INTERVAL = 10
 
 class ConnectionManager4Edge(object):
 
-    def __init__(self, host,  my_port, my_core_host, my_core_port):
+    def __init__(self, host,  my_port, my_core_host, my_core_port, callback):
         print('Initializing ConnectionManager4Edge...')
         self.host = host
         self.port = my_port
@@ -30,7 +30,7 @@ class ConnectionManager4Edge(object):
         self.my_core_port = my_core_port
         self.core_node_set = CoreNodeList()
         self.mm = MessageManager()
-
+        self.callback = callback
 
     def start(self):
         """
