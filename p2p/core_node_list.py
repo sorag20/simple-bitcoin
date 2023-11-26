@@ -52,3 +52,9 @@ class CoreNodeList:
     #リストのトップにある Peer を返却する
     def get_c_node_info(self):
         return list(self.list)[0]
+    
+    def has_this_peer(self, peer):
+        """
+        与えられた peer がリストに含まれているか? をチェックする
+        """
+        return peer in self.list

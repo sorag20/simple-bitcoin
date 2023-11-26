@@ -1,10 +1,16 @@
 import socket
-
+import pickle
+import threading
+import json
+from blockchain.blockchain_manager import BlockchainManager
+from blockchain.block_builder import BlockBuilder
+from transaction.transaction_pool import TransactionPool
 from p2p.connection_manager import ConnectionManager
 from p2p.my_protocol_message_handler import MyProtocolMessageHandler
 from p2p.message_manager import (
     MessageManager,
     MSG_NEW_TRANSACTION,
+    MSG_REQUEST_FULL_CHAIN,
     MSG_NEW_BLOCK,
     RSP_FULL_CHAIN,
     MSG_ENHANCED,
@@ -15,6 +21,7 @@ STATE_STANDBY = 1
 STATE_CONNECTED_TO_NETWORK = 2
 STATE_SHUTTING_DOWN = 3
 
+CHECK_INTERVAL = 10
 
 class ServerCore:
 
@@ -29,6 +36,11 @@ class ServerCore:
         self.core_node_host = core_node_host
         self.core_node_port = core_node_port
         self.my_protocol_message_store = []
+        self.bb = BlockBuilder()
+        my_genesis_block = self.bb.generate_genesis_block()
+        self.bm = BlockchainManager(my_genesis_block.to_dict())
+        self.prev_block_hash = self.bm.get_hash(my_genesis_block.to_dict())
+        self.tp = TransactionPool()
 
     def start(self):
         """
@@ -36,6 +48,8 @@ class ServerCore:
         """
         self.server_state = STATE_STANDBY
         self.cm.start()
+        self.bb_timer = threading.Timer(CHECK_INTERVAL, self.__generate_block_with_tp)
+        self.bb_timer.start()
 
     def join_network(self):
         """
@@ -83,18 +97,32 @@ class ServerCore:
         elif request == 'api_type':
             return 'server_core_api'
 
-    def __handle_message(self, msg, peer=None):
+    def __handle_message(self, msg,is_core,peer=None):
         """
             ConnectionManagerに引き渡すコールバックの中身。
         """
         if peer is not None:
-            # TODO: 現状はMSG_REQUEST_FULL_CHAINの時にしかこの処理に入らないけど、
-            # まだブロックチェーンを作るところまで行ってないのでとりあえず口だけ作っておく
-            print('Send our latest blockchain for reply to : ', peer)
+            if msg[2] == MSG_REQUEST_FULL_CHAIN:
+                # TODO: 現状はMSG_REQUEST_FULL_CHAINの時くらいしか想定してないけどとりあえず
+                print('Send our latest blockchain for reply to : ', peer)
+                pass
         else:
             if msg[2] == MSG_NEW_TRANSACTION:
-                # TODO: 新規transactionを登録する処理を呼び出す
-                pass
+                # 新規 transaction を登録する処理を呼び出す
+                new_transaction = json.loads(msg[4])
+                print("received new_transaction", new_transaction)
+                current_transactions = self.tp.get_stored_transactions()
+                if new_transaction in current_transactions:
+                    print("this is already pooled transaction:", t)
+                    return
+                if not is_core:
+                    self.tp.set_new_transaction(new_transaction)
+                    new_message = self.cm.get_message_text(MSG_NEW_BLOCK,json.dumps(new_block.to_dict()))
+
+                    self.cm.send_msg_to_all_peer(new_message)
+                else:
+                    self.tp.set_new_transaction(new_transaction)
+
             elif msg[2] == MSG_NEW_BLOCK:
                 # TODO: 新規ブロックを検証する処理を呼び出す
                 pass
@@ -120,3 +148,19 @@ class ServerCore:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(('8.8.8.8', 80))
         return s.getsockname()[0]
+
+    def __generate_block_with_tp(self):
+        result = self.tp.get_stored_transactions()
+        print('generate_block_with_tp called!')
+        if len(result) == 0:
+            print('Transaction Pool is empty ...')
+        new_block = self.bb.generate_new_block(result, self.prev_block_hash)
+        self.bm.set_new_block(new_block.to_dict())
+        self.prev_block_hash = self.bm.get_hash(new_block.to_dict())
+        index = len(result)
+        self.tp.clear_my_transactions(index)
+        print('Current Blockchain is ... ', self.bm.chain)
+        print('Current prev_block_hash is ... ', self.prev_block_hash)
+        self.bb_timer = threading.Timer(CHECK_INTERVAL,self.__generate_block_with_tp)
+
+        self.bb_timer.start()

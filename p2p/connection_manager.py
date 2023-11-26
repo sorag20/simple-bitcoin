@@ -296,3 +296,9 @@ class ConnectionManager:
             return True
         except OSError:
             return False
+        
+    def __is_in_core_set(self, peer):
+        """
+        与えられた node が Core ノードのリストに含まれているか? をチェックする
+        """
+        return self.core_node_set.has_this_peer(peer)
