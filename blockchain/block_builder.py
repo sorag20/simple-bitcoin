@@ -1,5 +1,6 @@
 from .block import Block
 from .block import GenesisBlock
+
 class BlockBuilder:
     def __init__(self):
         print('Initializing BlockBuilder...')
@@ -12,10 +13,3 @@ class BlockBuilder:
         genesis_block = GenesisBlock()
         return genesis_block
     
-    def to_dict(self):
-        d={
-            "timestamp" : self.timestamp,
-            "transaction": json.dumps(self.transaction),
-            "previous_block": self.previous_block,
-        }
-        return d

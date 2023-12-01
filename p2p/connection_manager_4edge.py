@@ -137,6 +137,7 @@ class ConnectionManager4Edge(object):
             params = (soc, addr, data_sum)
             executor.submit(self.__handle_message, params)
 
+
     def __handle_message(self, params):
         """
         受信したメッセージを確認して、内容に応じた処理を行う。クラスの外からは利用しない想定

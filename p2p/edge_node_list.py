@@ -1,12 +1,18 @@
 import threading
 
+
 class EdgeNodeList:
+
     def __init__(self):
         self.lock = threading.Lock()
         self.list = set()
+
     def add(self, edge):
         """
-        Edge ノードをリストに追加する。
+        Edgeノードをリストに追加する。
+
+        param:
+            edge : Edgeノードとして格納されるノードの接続情報（IPアドレスとポート番号）
         """
         with self.lock:
             print('Adding edge: ', edge)
@@ -15,7 +21,10 @@ class EdgeNodeList:
 
     def remove(self, edge):
         """
-        離脱したと判断される Edge ノードをリストから削除する。
+        離脱したと判断されるEdgeノードをリストから削除する。
+
+        param:
+            edge : 削除するノードの接続先情報（IPアドレスとポート番号）
         """
         with self.lock:
             if edge in self.list:
@@ -25,8 +34,7 @@ class EdgeNodeList:
 
     def overwrite(self, new_list):
         """
-        複数の Edge ノードの接続状況確認を行った後で
-        一括での上書き処理をしたいような場合はこちら
+        複数のEdgeノードの生存確認を行った後で一括での上書き処理をしたいような場合はこちら
         """
         with self.lock:
             print('edge node list will be going to overwrite')
@@ -35,6 +43,6 @@ class EdgeNodeList:
 
     def get_list(self):
         """
-        現在接続状態にある Edge ノードの一覧を返却する
+        現在接続状態にあるEdgeノードの一覧を返却する
         """
         return self.list

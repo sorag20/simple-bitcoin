@@ -51,11 +51,13 @@ class ConnectionManager:
         self.ping_timer_e = threading.Timer(PING_INTERVAL, self.__check_edges_connection)
         self.ping_timer_e.start()
 
+
     # ユーザが指定した既知のCoreノードへの接続（ServerCore向け
     def join_network(self, host, port):
         self.my_c_host = host
         self.my_c_port = port
         self.__connect_to_P2PNW(host, port)
+
 
     def get_message_text(self, msg_type, payload = None):
         """
@@ -71,6 +73,7 @@ class ConnectionManager:
         msgtxt = self.mm.build(msg_type, self.port, payload)
         print('generated_msg:', msgtxt)
         return msgtxt
+
 
     # 指定されたノードに対してメッセージを送信する
     def send_msg(self, peer, msg):
@@ -93,6 +96,7 @@ class ConnectionManager:
                 print("message will be sent to ... ", peer)
                 self.send_msg(peer, msg)
 
+
     # Edgeノードリストに登録されている全てのノードに対して同じメッセージをブロードキャストする
     def send_msg_to_all_edge(self, msg):
         print('send_msg_to_all_edge was called! ')
@@ -100,6 +104,7 @@ class ConnectionManager:
         for edge in current_list:
             print("message will be sent to ... " ,edge)
             self.send_msg(edge, msg)
+
 
     # 終了前の処理としてソケットを閉じる
     def connection_close(self):
@@ -136,6 +141,17 @@ class ConnectionManager:
 
             params = (soc, addr, data_sum)
             executor.submit(self.__handle_message, params)
+
+    def __is_in_core_set(self, peer):
+        """
+        与えられたnodeがCoreノードのリストに含まれているか？をチェックする
+
+            param:
+                peer : IPアドレスとポート番号のタプル
+            return:
+                True or False
+        """
+        return self.core_node_set.has_this_peer(peer)
 
     # 受信したメッセージを確認して、内容に応じた処理を行う。クラスの外からは利用しない想定
     def __handle_message(self, params):
@@ -197,7 +213,8 @@ class ConnectionManager:
                 print('REMOVE_EDGE request was received!! from', addr[0], peer_port)
                 self.__remove_edge_node((addr[0], peer_port))
             else:
-                self.callback((result, reason, cmd, peer_port, payload), (addr[0], peer_port))
+                is_core = self.__is_in_core_set((addr[0], peer_port)) 
+                self.callback((result, reason, cmd, peer_port, payload), is_core, (addr[0], peer_port))
                 return
         elif status == ('ok', OK_WITH_PAYLOAD):
             if cmd == MSG_CORE_LIST:
@@ -209,7 +226,8 @@ class ConnectionManager:
                     print('latest core node list: ', new_core_set)
                     self.core_node_set.overwrite(new_core_set)
             else:
-                self.callback((result, reason, cmd, peer_port, payload), None)
+                is_core = self.__is_in_core_set((addr[0], peer_port)) 
+                self.callback((result, reason, cmd, peer_port, payload), is_core, None)
                 return
         else:
             print('Unexpected status', status)
@@ -217,24 +235,36 @@ class ConnectionManager:
     def __add_peer(self, peer):
         """
         Coreノードをリストに追加する。クラスの外からは利用しない想定
+
+        param:
+            peer : Coreノードとして格納されるノードの接続情報（IPアドレスとポート番号）
         """
         self.core_node_set.add((peer))
 
     def __add_edge_node(self, edge):
         """
         Edgeノードをリストに追加する。クラスの外からは利用しない想定
+
+        param:
+            edge : Edgeノードとして格納されるノードの接続情報（IPアドレスとポート番号）
         """
         self.edge_node_set.add((edge))
 
     def __remove_peer(self, peer):
         """
         離脱したと判断されるCoreノードをリストから削除する。クラスの外からは利用しない想定
+
+        param:
+            peer : 削除するノードの接続先情報（IPアドレスとポート番号）
         """
         self.core_node_set.remove(peer)
 
     def __remove_edge_node(self, edge):
         """
         離脱したと判断されるEdgeノードをリストから削除する。クラスの外からは利用しない想定
+
+        param:
+            edge : 削除するノードの接続先情報（IPアドレスとポート番号）
         """
         self.edge_node_set.remove(edge)
 
@@ -285,6 +315,9 @@ class ConnectionManager:
     def __is_alive(self, target):
         """
         有効ノード確認メッセージの送信
+
+        param:
+            target : 有効ノード確認メッセージの送り先となるノードの接続情報（IPアドレスとポート番号）
         """
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -296,9 +329,4 @@ class ConnectionManager:
             return True
         except OSError:
             return False
-        
-    def __is_in_core_set(self, peer):
-        """
-        与えられた node が Core ノードのリストに含まれているか? をチェックする
-        """
-        return self.core_node_set.has_this_peer(peer)
+

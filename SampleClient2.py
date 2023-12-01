@@ -5,6 +5,7 @@ import json
 from core.client_core import ClientCore
 from p2p.message_manager import MSG_NEW_TRANSACTION
 
+
 my_p2p_client = None
 
 
@@ -20,7 +21,7 @@ def shutdown_client():
 def main():
     signal.signal(signal.SIGINT, signal_handler)
     global my_p2p_client
-    my_p2p_client = ClientCore(50088, '192.168.10.103',50082)
+    my_p2p_client = ClientCore(50088, '192.168.10.103',50090)
     my_p2p_client.start()
 
     sleep(10)
@@ -50,7 +51,6 @@ def main():
     }
 
     my_p2p_client.send_message_to_my_core_node(MSG_NEW_TRANSACTION,json.dumps(transaction3))
-
 
 if __name__ == '__main__':
     main()
