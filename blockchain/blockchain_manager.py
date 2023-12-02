@@ -43,6 +43,23 @@ class BlockchainManager:
         return len(self.chain)
 
 
+    def get_stored_transactions_from_bc(self):
+        print('get_stored_transactions_from_bc was called!')
+        current_index = 1
+        stored_transactions = []
+
+        while current_index < len(self.chain):
+            block = self.chain[current_index]
+            transactions = block['transactions']
+
+            for t in transactions:
+                stored_transactions.append(json.loads(t))
+
+            current_index += 1
+
+        return stored_transactions
+
+
     def get_transactions_from_orphan_blocks(self, orphan_blocks):
         current_index = 1
         new_transactions = []
@@ -114,8 +131,6 @@ class BlockchainManager:
 
     def is_valid_block(self, prev_block_hash, block, difficulty=3):
         # ブロック単体の正当性を検証する
-        print("🎆🧨heyheyheyehyeheyeheyhey");
-        
         suffix = '0' * difficulty
         block_4_pow = copy.deepcopy(block)
         nonce = block_4_pow['nonce']
@@ -158,6 +173,64 @@ class BlockchainManager:
 
         return True
 
+
+    def has_this_output_in_my_chain(self, transaction_output):
+        """
+        保存されているブロックチェーン内ですでにこのTransactionOutputがInputとして使われていないか？の確認
+
+        返り値はTrueがすでに存在しているということだから、Transactionの有効性としてNGを意味していることに注意
+        """
+        print('has_this_output_in_my_chain was called!')
+        current_index = 1
+        
+        if len(self.chain) == 1:
+            print('only the genesis block is in my chain')
+            return False
+
+        while current_index < len(self.chain):
+            block = self.chain[current_index]
+            transactions = block['transactions']
+
+            for t in transactions:
+                t = json.loads(t)
+                if t['t_type'] == 'basic' or t['t_type'] == 'coinbase_transaction':
+                    if t['inputs'] != []:
+                        inputs_t = t['inputs']
+                        for it in inputs_t:
+                            print(it['transaction']['outputs'][it['output_index']])
+                            if it['transaction']['outputs'][it['output_index']] == transaction_output:
+                                print('This TransactionOutput was already used', transaction_output)
+                                return True
+
+            current_index += 1
+
+        return False
+
+
+    def is_valid_output_in_my_chain(self, transaction_output):
+        """
+        チェーン内で認知されていない不正なTransactionを使ってないか確認
+        テスト用に気軽にCoinbaseTransaction使えなくなるので有効化させる時は注意
+        """
+        print('is_valid_output_in_my_chain was called!')
+        current_index = 1
+
+        while current_index < len(self.chain):
+            block = self.chain[current_index]
+            transactions = block['transactions']
+
+            for t in transactions:
+                t = json.loads(t)
+                if t['t_type'] == 'basic' or t['t_type'] == 'coinbase_transaction':
+                    outputs_t = t['outputs']
+                    for ot in outputs_t:
+                        if ot == transaction_output:
+                            return True
+
+            current_index += 1
+
+        return False
+                         
 
     def _get_double_sha256(self,message):
     	return hashlib.sha256(hashlib.sha256(message).digest()).digest()
