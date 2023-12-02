@@ -16,6 +16,7 @@ from p2p.my_protocol_message_store import MessageStore
 from p2p.connection_manager import ConnectionManager
 from p2p.my_protocol_message_handler import MyProtocolMessageHandler
 from p2p.message_manager import (
+
     MSG_NEW_TRANSACTION,
     MSG_NEW_BLOCK,
     MSG_REQUEST_FULL_CHAIN,
@@ -215,8 +216,8 @@ class ServerCore:
         """
         fee_for_block = self.get_total_fee_on_block(block)
         fee_for_block += 30
-        print("fee_for_block: ", fee_for_block)
-
+        print("fee_for_block: ", fee_for_block) 
+        
         transactions = block['transactions']
 
         counter = 0
@@ -236,7 +237,7 @@ class ServerCore:
                         return False
                     else:
                         insentive = t['outputs'][0]['value']
-                        print('insentive', insentive)
+                        print('insentive', insentive) 
                         if insentive != fee_for_block:
                             print('Invalid value in fee for CoinbaseTransaction', insentive)
                             return False
@@ -281,12 +282,12 @@ class ServerCore:
                 mychain = self.bm.get_my_blockchain()
                 chain_data = pickle.dumps(mychain, 0).decode()
                 new_message = self.cm.get_message_text(RSP_FULL_CHAIN, chain_data)
-                self.cm.send_msg(peer,new_message)
+                self.cm.send_msg(peer, new_message)
         else:
             if msg[2] == MSG_NEW_TRANSACTION:
                 new_transaction = json.loads(msg[4])
-                print('received new_transaction', new_transaction)
-                is_sbc_t, _ = self.um.is_sbc_transaction(new_transaction)
+                print('received new_transaction',new_transaction)
+                is_sbc_t, t_type = self.um.is_sbc_transaction(new_transaction)
                 current_transactions = self.tp.get_stored_transactions()
                 if new_transaction in current_transactions:
                     print('this is already pooled transaction: ', new_transaction)
@@ -294,6 +295,10 @@ class ServerCore:
 
                     if not is_sbc_t:
                         print('this is not SimpleBitcoin transaction: ', new_transaction)
+                        is_verified = self.rsa_util.verify_general_transaction_sig(new_transaction)
+                        if not is_verified:
+                            print('Transaction Verification Error')
+                            return
                     else:
                         # テスト用に最初のブロックだけ未知のCoinbaseTransactionを許すための暫定処置
                         if self.bm.get_my_chain_length() != 1:
@@ -302,13 +307,17 @@ class ServerCore:
                                 print('Transaction Verification Error')
                                 return
                     self.tp.set_new_transaction(new_transaction)
-
+                    
                     if not is_core:
-                        new_message = self.cm.get_message_text(MSG_NEW_TRANSACTION, json.dumps(new_transaction))
+                        m_type = MSG_NEW_TRANSACTION
+                        new_message = self.cm.get_message_text(m_type, json.dumps(new_transaction))
                         self.cm.send_msg_to_all_peer(new_message)
                 else:
                     if not is_sbc_t:
                         print('this is not SimpleBitcoin transaction: ', new_transaction)
+                        is_verified = self.rsa_util.verify_general_transaction_sig(new_transaction)
+                        if not is_verified:
+                            return
                     else:
                         # テスト用に最初のブロックだけ未知のCoinbaseTransactionを許すための暫定処置
                         if self.bm.get_my_chain_length() != 1:
@@ -319,8 +328,9 @@ class ServerCore:
                     self.tp.set_new_transaction(new_transaction)
 
                     if not is_core:
-                        new_message = self.cm.get_message_text(MSG_NEW_TRANSACTION, json.dumps(new_transaction))
-                        self.cm.send_msg_to_all_peer(new_message)
+                        m_type = MSG_NEW_TRANSACTION
+                        new_message = self.cm.get_message_text(m_type, json.dumps(new_transaction))
+                        self.cm.send_msg_to_all_peer(new_message)                    
 
             elif msg[2] == MSG_NEW_BLOCK:
 
@@ -333,7 +343,7 @@ class ServerCore:
                 if self.bm.is_valid_block(self.prev_block_hash, new_block):
                     block_check_result = self.check_transactions_in_new_block(new_block)
                     print('block_check_result : ', block_check_result)
-                    if block_check_result is not True:
+                    if not block_check_result:
                         print('previous block hash is ok. but still not acceptable.')
                         self.get_all_chains_for_resolve_conflict()
                         return
@@ -352,6 +362,7 @@ class ServerCore:
                 if not is_core:
                     print('blockchain received from unknown')
                     return
+
                 # ブロックチェーン送信要求に応じて返却されたブロックチェーンを検証し、有効なものか検証した上で
                 # 自分の持つチェインと比較し優位な方を今後のブロックチェーンとして有効化する
                 new_block_chain = pickle.loads(msg[4].encode('utf8'))
@@ -366,7 +377,7 @@ class ServerCore:
                             self.tp.set_new_transaction(t)
                 else:
                     print('Received blockchain is useless...')
-
+                    
             elif msg[2] == MSG_ENHANCED:
                 # アプリケーションがP2P Network を単なるトランスポートして使うために独自拡張したメッセージはここで処理する。
                 # SimpleBitcoin としてはこの種別は使わない

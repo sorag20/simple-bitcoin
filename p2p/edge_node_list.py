@@ -2,7 +2,9 @@ import threading
 
 
 class EdgeNodeList:
-
+    """ 
+    Edgeノードのリストをスレッドセーフに管理する
+    """
     def __init__(self):
         self.lock = threading.Lock()
         self.list = set()
@@ -18,6 +20,7 @@ class EdgeNodeList:
             print('Adding edge: ', edge)
             self.list.add((edge))
             print('Current Edge List: ', self.list)
+
 
     def remove(self, edge):
         """
@@ -41,8 +44,25 @@ class EdgeNodeList:
             self.list = new_list
             print('Current Edge list: ', self.list)
 
+
     def get_list(self):
         """
         現在接続状態にあるEdgeノードの一覧を返却する
         """
         return self.list
+
+
+    def has_this_edge(self, pubky_address):
+        """
+        指定の公開鍵を持ったEdgeノードがリストに存在しているかどうかを確認し結果を返却する
+
+        param:
+            pubky_address : 公開鍵）
+        """
+        for e in self.list:
+            print('edge: ', e[2])
+            print('pubkey: ', pubky_address)
+            if e[2] == pubky_address:
+                return True, e[0], e[1]
+
+        return False, None, None

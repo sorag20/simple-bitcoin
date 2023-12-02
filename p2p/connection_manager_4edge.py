@@ -6,10 +6,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .core_node_list import CoreNodeList
 from .message_manager import (
+
     MessageManager,
     MSG_CORE_LIST,
     MSG_PING,
     MSG_ADD_AS_EDGE,
+
     ERR_PROTOCOL_UNMATCH,
     ERR_VERSION_UNMATCH,
     OK_WITH_PAYLOAD,
@@ -42,10 +44,14 @@ class ConnectionManager4Edge(object):
         self.ping_timer = threading.Timer(PING_INTERVAL, self.__send_ping)
         self.ping_timer.start()
 
-    def connect_to_core_node(self):
+    def connect_to_core_node(self, my_pubkey=None):
         """
         ユーザが指定した既知のCoreノードへの接続（ClientCore向け
+        
+        params:
+            my_pubkey : 自分のClientCoreに登録されている公開鍵
         """
+        self.my_pubkey = my_pubkey
         self.__connect_to_P2PNW(self.my_core_host,self.my_core_port)
 
     def get_message_text(self, msg_type, payload = None):
@@ -86,7 +92,7 @@ class ConnectionManager4Edge(object):
                 new_core = self.core_node_set.get_c_node_info()
                 self.my_core_host = new_core[0]
                 self.my_core_port = new_core[1]
-                self.connect_to_core_node()
+                self.connect_to_core_node(self.my_pubkey)
                 self.send_msg((new_core[0], new_core[1]), msg)
             else:
                 print('No core node found in our list...')
@@ -112,7 +118,7 @@ class ConnectionManager4Edge(object):
         """
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((host, port))
-        msg = self.mm.build(MSG_ADD_AS_EDGE, self.port)
+        msg = self.mm.build(MSG_ADD_AS_EDGE, self.port, self.my_pubkey)
         print(msg)
         s.sendall(msg.encode('utf-8'))
         s.close()
@@ -179,15 +185,26 @@ class ConnectionManager4Edge(object):
         elif status == ('ok', OK_WITH_PAYLOAD):
             if cmd == MSG_CORE_LIST:
                 # Coreノードに依頼してCoreノードのリストを受け取る口だけはある
-                print('Refresh the core node list...')
-                new_core_set = pickle.loads(payload.encode('utf8'))
-                print('latest core node list: ', new_core_set)
-                self.core_node_set.overwrite(new_core_set)
+                if self.my_core_host == addr[0] and self.my_core_port == peer_port:
+                    new_core_set = pickle.loads(payload.encode('utf8'))
+                    checked = False
+                    for c in new_core_set:
+                        if c == (addr[0], peer_port):
+                            checked = True
+                    if checked:
+                        print('List from Central. Refresh the core node list...')
+                        print('latest core node list: ', new_core_set)
+                        self.core_node_set.overwrite(new_core_set)
+                    else:
+                        print('reeceived unsafe core node list... from', (addr[0], peer_port))
+                else:
+                    print('reeceived unsafe core node list... from', (addr[0], peer_port))
             else:
                 self.callback((result, reason, cmd, peer_port, payload))
         else:
             print('Unexpected status', status)
-                    
+
+
     def __send_ping(self):
         """
         生存確認メッセージの送信処理実体。中で確認処理は定期的に実行し続けられる
@@ -212,11 +229,10 @@ class ConnectionManager4Edge(object):
                 new_core = self.core_node_set.get_c_node_info()
                 self.my_core_host = new_core[0]
                 self.my_core_port = new_core[1]
-                self.connect_to_core_node()
+                self.connect_to_core_node(self.my_pubkey)
             else:
                 print('No core node found in our list...')
                 self.ping_timer.cancel()
 
         self.ping_timer = threading.Timer(PING_INTERVAL, self.__send_ping)
         self.ping_timer.start()
-

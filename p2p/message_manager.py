@@ -75,7 +75,7 @@ class MessageManager:
             return ('error', ERR_PROTOCOL_UNMATCH, None, None, None)
         elif msg_ver > StrictVersion(MY_VERSION):
             return ('error', ERR_VERSION_UNMATCH, None, None, None)
-        elif cmd in (MSG_CORE_LIST, MSG_NEW_TRANSACTION, MSG_NEW_BLOCK, RSP_FULL_CHAIN, MSG_ENHANCED):
+        elif cmd in (MSG_CORE_LIST, MSG_NEW_TRANSACTION, MSG_NEW_BLOCK, RSP_FULL_CHAIN, MSG_ENHANCED, MSG_ADD_AS_EDGE):
             result_type = OK_WITH_PAYLOAD
             return ('ok', result_type, cmd, my_port, payload)
         else:

@@ -1,6 +1,8 @@
 import Crypto
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
+from Crypto.Cipher import PKCS1_OAEP
+
 from Crypto.Hash import SHA256
 
 import copy
@@ -24,8 +26,13 @@ class RSAUtil:
         """
         与えられた公開鍵で暗号化する
         """
+        print("🎍")
+        print(target)
+        print("🎍")
+        print(pubkey_text)
         pubkey = RSA.importKey(binascii.unhexlify(pubkey_text))
-        encrypto = pubkey.encrypt(target, 0)
+        cipher = PKCS1_OAEP.new(pubkey)
+        encrypto = cipher.encrypt(target)
         return encrypto
 
     def verify_sbc_transaction_sig(self, transaction):

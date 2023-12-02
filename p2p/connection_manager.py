@@ -142,7 +142,7 @@ class ConnectionManager:
         current_list = self.edge_node_set.get_list()
         for edge in current_list:
             print("message will be sent to ... " ,edge)
-            self.send_msg(edge, msg)
+            self.send_msg((edge[0], edge[1]), msg)
 
     def connection_close(self):
         """
@@ -269,12 +269,6 @@ class ConnectionManager:
                 cl = pickle.dumps(self.core_node_set.get_list(), 0).decode()
                 msg = self.mm.build(MSG_CORE_LIST, self.port, cl)
                 self.send_msg((addr[0], peer_port), msg)
-            elif cmd == MSG_ADD_AS_EDGE:
-                print('ADD request for Edge node was received!!')
-                self.__add_edge_node((addr[0], peer_port))
-                cl = pickle.dumps(self.core_node_set.get_list(), 0).decode()
-                msg = self.mm.build(MSG_CORE_LIST, self.port, cl)
-                self.send_msg((addr[0], peer_port), msg)
             elif cmd == MSG_REMOVE_EDGE:
                 print('REMOVE EDGE request was received!! from', addr[0], peer_port)
                 self.__remove_edge_node((addr[0], peer_port))
@@ -310,6 +304,13 @@ class ConnectionManager:
                         self.core_node_set.overwrite(new_core_set)
                     else:
                         print('reeceived unsafe core node list... from', (addr[0], peer_port))
+
+            elif cmd == MSG_ADD_AS_EDGE:
+                print('ADD request for Edge node was received!!')
+                self.__add_edge_node((addr[0], peer_port, payload))
+                cl = pickle.dumps(self.core_node_set.get_list(), 0).decode()
+                msg = self.mm.build(MSG_CORE_LIST, self.port, cl)
+                self.send_msg((addr[0], peer_port), msg)
             else:
                 is_core = self.__is_in_core_set((addr[0], peer_port)) 
                 self.callback((result, reason, cmd, peer_port, payload), is_core, None)
@@ -389,7 +390,7 @@ class ConnectionManager:
         """
         print('check_edges_connection was called')
         current_edge_list = self.edge_node_set.get_list()
-        dead_e_node_set = list(filter(lambda p: not self.__is_alive(p), current_edge_list))
+        dead_e_node_set = list(filter(lambda p: not self.__is_alive((p[0], p[1])), current_edge_list))
         if dead_e_node_set:
             print('Removing ', dead_e_node_set)
             current_edge_list = current_edge_list - set(dead_e_node_set)

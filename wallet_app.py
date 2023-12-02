@@ -17,9 +17,11 @@ from transaction.transactions import Transaction
 from transaction.transactions import CoinbaseTransaction
 from transaction.transactions import TransactionInput
 from transaction.transactions import TransactionOutput
+from transaction.transactions import EngravedTransaction
 from transaction.utxo_manager import UTXOManager as UTXM
 from utils.key_manager import KeyManager
 from utils.rsa_util import RSAUtil
+from utils.aes_util import AESUtil
 from p2p.message_manager import (
 
     MSG_NEW_TRANSACTION,
@@ -58,8 +60,8 @@ class SimpleBC_Gui(Frame):
         self.um = UTXM(self.km.my_address())
         self.rsa_util = RSAUtil()
 
-        self.c_core = Core(my_port, c_host, c_port, self.update_callback)
-        self.c_core.start()
+        self.c_core = Core(my_port, c_host, c_port, self.update_callback, self.get_message_callback)
+        self.c_core.start(self.km.my_address())
 
         # テスト用途（本来はこんな処理しない）
         t1 = CoinbaseTransaction(self.km.my_address())
@@ -85,7 +87,37 @@ class SimpleBC_Gui(Frame):
         info_area = Text(f, width=70, height=50)
         info_area.insert(INSERT, info)
         info_area.pack()
-          
+
+
+    def get_message_callback(self, target_message):
+        print('get_message_callback called!')
+        if target_message['message_type'] == 'cipher_message':
+            try:
+                encrypted_key = base64.b64decode(binascii.unhexlify(target_message['enc_key']))
+                print('encripted_key : ', encrypted_key)
+                decrypted_key = self.km.decrypt_with_private_key(encrypted_key)
+                print('decrypted_key : ', binascii.hexlify(decrypted_key).decode('ascii'))
+                # 流石に名前解決をしないで公開鍵のまま出しても意味なさそうなのでコメントアウト
+                #sender = binascii.unhexlify(target_message['sender'])
+                aes_util = AESUtil()
+                decrypted_message = aes_util.decrypt_with_key(base64.b64decode(binascii.unhexlify(target_message['body'])), decrypted_key)
+                print(decrypted_message.decode('utf-8'))
+                """
+                message = {
+                    'from' : sender,
+                    'message' : decrypted_message.decode('utf-8')
+                }
+                message_4_display = pprint.pformat(message, indent=2)
+                """
+                messagebox.showwarning('You received an instant encrypted message !', decrypted_message.decode('utf-8'))
+            except Exception as e:
+                print(e, 'error occurred')
+        elif target_message['message_type'] == 'engraved':
+            sender_name = target_message['sender_alt_name']
+            msg_body = base64.b64decode(binascii.unhexlify(target_message['message'])).decode('utf-8')
+            timestamp = datetime.datetime.fromtimestamp(int(target_message['timestamp']))
+            messagebox.showwarning('You received a new engraved message!', '{} :\n {} \n {}'.format(sender_name, msg_body, timestamp))
+            
 
     def update_callback(self):
         print('update_callback was called!')
@@ -132,8 +164,11 @@ class SimpleBC_Gui(Frame):
 
         self.subMenu3 = Menu(self.menuBar, tearoff=0)
         self.menuBar.add_cascade(label='Advance', menu=self.subMenu3)
+        self.subMenu3.add_command(label='Send Encrypted Instant Message', command=self.send_instant_message)
+        self.subMenu3.add_command(label='Show Logs (Received)', command=self.open_r_log_window)
+        self.subMenu3.add_command(label='Show Logs (Send)', command=self.open_s_log_window)
         self.subMenu3.add_command(label='Show Blockchain', command=self.show_my_block_chain)
-
+        self.subMenu3.add_command(label='Engrave Message', command=self.engrave_message)
 
     
     def show_my_address(self):
@@ -231,6 +266,151 @@ class SimpleBC_Gui(Frame):
         button1.grid(row=3,column=1,sticky=W)
 
 
+    def send_instant_message(self):
+        def send_message():
+            r_pkey = entry1.get()
+            print('pubkey', r_pkey)
+            new_message = {}
+            aes_util = AESUtil()
+            cipher_txt = aes_util.encrypt(entry2.get())
+            new_message['message_type'] = 'cipher_message'
+            new_message['recipient'] = r_pkey
+            new_message['sender'] = self.km.my_address()
+            new_message['body'] = binascii.hexlify(base64.b64encode(cipher_txt)).decode('ascii')
+            key = aes_util.get_aes_key()
+
+            encrypted_key = self.rsa_util.encrypt_with_pubkey(key, r_pkey)
+            print('encrypted_key: ', encrypted_key[0])
+            new_message['enc_key'] = binascii.hexlify(base64.b64encode(str(encrypted_key[0]).encode('utf-8'))).decode('ascii')
+            msg_type = MSG_ENHANCED
+            message_strings = json.dumps(new_message)
+            self.c_core.send_message_to_my_core_node(msg_type, message_strings)
+            f.destroy()
+            
+        f = Tk()
+        f.title('New Message')
+        label0 = Label(f, text='Please input recipient address and message')
+        frame1 = ttk.Frame(f)
+        label1 = ttk.Label(frame1, text='Recipient:')
+        pkey = StringVar()
+        entry1 = ttk.Entry(frame1, textvariable=pkey)
+        label2 = ttk.Label(frame1, text='Message:')
+        message = StringVar()
+        entry2 = ttk.Entry(frame1, textvariable=message) 
+        button1 = ttk.Button(frame1, text='Send Message', command=send_message)
+
+        label0.grid(row=0,column=0,sticky=(N,E,S,W))
+        frame1.grid(row=1,column=0,sticky=(N,E,S,W))
+        label1.grid(row=2,column=0,sticky=E)
+        entry1.grid(row=2,column=1,sticky=W)
+        label2.grid(row=3,column=0,sticky=E)
+        entry2.grid(row=3,column=1,sticky=W)
+        button1.grid(row=4,column=1,sticky=W)  
+
+
+    def open_r_log_window(self):
+        """
+        別ウィンドウでログ情報を表示する。これまでに受け取った自分宛のTransactionを時系列で並べる
+        """
+        s_transactions = self.c_core.get_stored_transactions_from_bc()
+        my_transactions = self.um.get_txs_to_my_address(s_transactions)
+        
+        informations = []
+        
+        receive_date = None
+        sender = None
+        value = None
+        reason = None
+        description = None
+        
+        for t in my_transactions:
+        
+            result, t_type = self.um.is_sbc_transaction(t)
+            receive_date = datetime.datetime.fromtimestamp(int(t['timestamp']))
+            
+            if t_type == 'basic':
+                reason = base64.b64decode(binascii.unhexlify(t['extra']['reason'])).decode('utf-8')
+                description = base64.b64decode(binascii.unhexlify(t['extra']['description'])).decode('utf-8')
+                for txout in t['outputs']:
+                    recipient = txout['recipient']
+                    if recipient == self.km.my_address():
+                        value = txout['value']
+                for txin in t['inputs']:
+                    t_in_txin = txin['transaction']
+                    idx = txin['output_index']
+                    sender = t_in_txin['outputs'][idx]['recipient']
+                    if sender == self.km.my_address():
+                        sender = 'Change to myself'
+                
+            else:
+                reason = 'CoinbaseTransaction'
+                description = 'CoinbaseTransaction'
+                sender = self.km.my_address()
+                for txout in t['outputs']:
+                    recipient = txout['recipient']
+                    if recipient == self.km.my_address():
+                        value = txout['value']
+                        
+            info = {
+                'date' : receive_date,
+                'From' : sender,
+                'Value' : value,
+                'reason' : reason,
+                'description' : description
+            }
+            informations.append(info)
+
+        log = pprint.pformat(informations, indent=2)
+        if log is not None:
+            self.display_info('Log : Received Transaction', log)
+        else:
+            self.display_info('Warning', 'Currently you received NO Transaction to you...')
+
+
+    def open_s_log_window(self):
+        """
+        別ウィンドウでログ情報を表示する。これまでに自分が送信したTransactionを時系列で並べる
+        """
+        s_transactions = self.c_core.get_stored_transactions_from_bc()
+        my_transactions = self.um.get_txs_from_my_address(s_transactions)
+        
+        informations = []
+        
+        send_date = None
+        recipient = None
+        value = None
+        reason = None
+        description = None
+        
+        for t in my_transactions:
+        
+            result, t_type = self.um.is_sbc_transaction(t)
+            send_date = datetime.datetime.fromtimestamp(int(t['timestamp']))
+
+            if t_type == 'basic':
+                reason = base64.b64decode(binascii.unhexlify(t['extra']['reason'])).decode('utf-8')
+                description = base64.b64decode(binascii.unhexlify(t['extra']['description'])).decode('utf-8')
+                for txout in t['outputs']:
+                    recipient = txout['recipient']
+                    if recipient == self.km.my_address():
+                        recipient = 'Change to myself'
+                    value = txout['value']
+                        
+                    info = {
+                        'date' : send_date,
+                        'To' : recipient,
+                        'Value' : value,
+                        'reason' : reason,
+                        'description' : description
+                    }
+                    informations.append(info)
+
+        log = pprint.pformat(informations, indent=2)
+        if log is not None:
+            self.display_info('Log : Sent Transaction', log)
+        else:
+            self.display_info('Warning', 'NO Transaction which was sent from you...')
+
     def show_my_block_chain(self):
         """
         自分が保持しているブロックチェーンの中身を確認する
@@ -242,6 +422,46 @@ class SimpleBC_Gui(Frame):
         else:
             self.display_info('Warning', 'Currently Blockchain is empty...')
 
+    def engrave_message(self):
+        """
+        ブロックチェーンにTwitter風のメッセージを格納する
+        """
+        def send_e_message():
+            # P2PによるブロードキャストとTransactionのハイブリッド
+            new_message = {}
+            msg_txt = entry.get().encode('utf-8')
+            
+            msg = EngravedTransaction(
+                self.km.my_address(),
+                'Testman',
+                binascii.hexlify(base64.b64encode(msg_txt)).decode('ascii')
+            )
+
+            to_be_signed = json.dumps(msg.to_dict(), sort_keys=True)
+            signed = self.km.compute_digital_signature(to_be_signed)
+            new_tx = json.loads(to_be_signed)
+            new_tx['signature'] = signed
+            tx_strings = json.dumps(new_tx)
+            self.c_core.send_message_to_my_core_node(MSG_NEW_TRANSACTION, tx_strings)
+            new_tx2 = copy.deepcopy(new_tx)
+            new_tx2['message_type'] = 'engraved'
+            tx_strings2 = json.dumps(new_tx2)
+            self.c_core.send_message_to_my_core_node(MSG_ENHANCED, tx_strings2)
+            f.destroy()
+            
+        f = Tk()
+        f.title('Engrave New Message')
+        label0 = Label(f, text='Any idea?')
+        frame1 = ttk.Frame(f)
+        label = ttk.Label(frame1, text='Message:')
+        entry = ttk.Entry(frame1, width=30) 
+        button1 = ttk.Button(frame1, text='Engrave this on Blockchain', command=send_e_message)
+
+        label0.grid(row=0,column=0,sticky=(N,E,S,W))
+        frame1.grid(row=1,column=0,sticky=(N,E,S,W))
+        label.grid(row=2,column=0,sticky=E)
+        entry.grid(row=2,column=1,sticky=W)
+        button1.grid(row=3,column=1,sticky=W)  
 
   
     def setupGUI(self):
@@ -286,6 +506,20 @@ class SimpleBC_Gui(Frame):
         self.feeBox = Entry(lf2, bd=2)
         self.feeBox.grid(row=2, column=1, pady=5, sticky='NSEW')
 
+        # 送金理由を書く欄（主にURLとか）
+        self.label4 = Label(lf2, text='reason (Optional) :')
+        self.label4.grid(row=3, pady=5)
+    
+        self.reasonBox = Entry(lf2, bd=2)
+        self.reasonBox.grid(row=3, column=1, pady=5, sticky='NSEW')
+        
+        # 通信欄（公開メッセージ）
+        self.label5 = Label(lf2, text='message (Optional) :')
+        self.label5.grid(row=4, pady=5)
+    
+        self.messageBox = Entry(lf2, bd=2)
+        self.messageBox.grid(row=4, column=1, pady=5, sticky='NSEW')
+
         # 間隔の開け方がよくわからんので空文字で場所確保
         self.label4 = Label(lf2, text='')
         self.label4.grid(row=5, pady=5)
@@ -304,6 +538,8 @@ class SimpleBC_Gui(Frame):
         sendAtp = self.amountBox.get()
         recipientKey = self.recipient_pubkey.get()
         sendFee = self.feeBox.get()
+        reason = binascii.hexlify(base64.b64encode(self.reasonBox.get().encode('utf-8'))).decode('ascii')
+        desc = binascii.hexlify(base64.b64encode(self.messageBox.get().encode('utf-8'))).decode('ascii')
 
         utxo_len = len(self.um.utxo_txs)
 
@@ -318,7 +554,17 @@ class SimpleBC_Gui(Frame):
 
         if not sendFee:
             sendFee = 0
-
+            
+        if not reason:
+            reason = 'No information'
+            
+        if not desc:
+            desc = 'No description'
+            
+        extra = {
+            'reason': reason,
+            'description': desc,
+        }
 
         if result:
             if 0 < utxo_len:
@@ -331,7 +577,8 @@ class SimpleBC_Gui(Frame):
 
             t = Transaction(
                 [TransactionInput(utxo, idx)],
-                [TransactionOutput(recipientKey, int(sendAtp))]
+                [TransactionOutput(recipientKey, int(sendAtp))],
+                extra
             )
 
             counter = 1
@@ -356,8 +603,9 @@ class SimpleBC_Gui(Frame):
                 new_tx = json.loads(to_be_signed)
                 new_tx['signature'] = signed
                 # TransactionをP2P Networkに送信
+                msg_type = MSG_NEW_TRANSACTION
                 tx_strings = json.dumps(new_tx)
-                self.c_core.send_message_to_my_core_node(MSG_NEW_TRANSACTION, tx_strings)
+                self.c_core.send_message_to_my_core_node(msg_type, tx_strings)
                 print('signed new_tx:', tx_strings)
                 # 実験的にお釣り分の勘定のため新しく生成したTransactionをUTXOとして追加しておくが
                 # 本来はブロックチェーンの更新に合わせて再計算した方が適切
@@ -375,6 +623,8 @@ class SimpleBC_Gui(Frame):
         self.amountBox.delete(0,END)
         self.feeBox.delete(0,END)
         self.recipient_pubkey.delete(0,END)
+        self.reasonBox.delete(0,END)
+        self.messageBox.delete(0,END)
         self.update_balance()
 
  
@@ -386,7 +636,6 @@ def main(my_port, c_host, c_port):
 
 
 if __name__ == '__main__':
-
     args = sys.argv
  
     if len(args) == 4:

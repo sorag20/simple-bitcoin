@@ -2,7 +2,9 @@ import threading
 
 
 class CoreNodeList:
-
+    """ 
+    Peerのリストをスレッドセーフに管理する
+    """
     def __init__(self):
         self.lock = threading.Lock()
         self.list = set()
@@ -17,7 +19,8 @@ class CoreNodeList:
         with self.lock:
             print('Adding peer: ', peer)
             self.list.add((peer))
-            print('Current Core List: ', self.list)
+            print('Current Core Set: ', self.list)
+
 
     def remove(self, peer):
         """
@@ -41,20 +44,23 @@ class CoreNodeList:
             self.list = new_list
             print('Current Core list: ', self.list)
 
+
     def get_list(self):
         """
         現在接続状態にあるPeerの一覧を返却する
         """
         return self.list
 
+    def get_c_node_info(self):
+        c_list = []
+        for i in self.list:
+           c_list.append(i)
+
+        return c_list[0]
+
     def get_length(self):
         return len(self.list)
 
-    def get_c_node_info(self):
-        """
-        リストのトップにあるPeerを返却する
-        """
-        return list(self.list)[0]
 
     def has_this_peer(self, peer):
         """
@@ -66,3 +72,4 @@ class CoreNodeList:
                 True or False
         """
         return peer in self.list
+
